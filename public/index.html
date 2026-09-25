@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ночная смена</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07080b;color:#eee;font-family:system-ui,sans-serif}
+main{max-width:900px;margin:auto;padding:18px}.panel{background:#101217;border:1px solid #30333a;border-radius:14px;padding:18px}
+input,button{font:inherit;border-radius:9px;padding:11px 13px;border:1px solid #3b3e46;background:#181a20;color:#fff}
+button{cursor:pointer}.primary{background:#ddd;color:#111}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.hidden{display:none}
+#game{position:relative;height:520px;margin-top:14px;border:1px solid #333;background:radial-gradient(circle,#25262a,#0c0d10 48%,#030405);overflow:hidden;border-radius:12px}
+.wall{position:absolute;inset:6%;border:2px solid #3a3c42}.door{position:absolute;left:46%;top:32%;width:9%;height:30%;border:3px solid #555}
+.p{position:absolute;width:18px;height:18px;border-radius:50%;transform:translate(-50%,-50%);background:#eee;box-shadow:0 0 12px #fff}
+.me{background:#8ee!important}.name{position:absolute;transform:translate(-50%,-190%);font-size:11px;white-space:nowrap}
+#players{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:#aaa}
+#msg{margin-top:8px;color:#aaa}
+@media(max-width:600px){#game{height:400px}main{padding:10px}}
+</style>
+</head>
+<body>
+<main>
+<section id="lobby" class="panel">
+<h1>🌑 Ночная смена</h1>
+<p>Онлайн-хоррор на 2–6 игроков.</p>
+<div class="row">
+<input id="name" maxlength="16" value="Игрок" placeholder="Имя">
+<button id="create" class="primary">Создать комнату</button>
+<input id="code" maxlength="6" placeholder="Код">
+<button id="join">Войти</button>
+</div>
+<div id="roomInfo"></div>
+<div id="players"></div>
+<div class="row"><button id="start" class="primary" disabled>Начать игру</button></div>
+<div id="msg">Подключение к серверу…</div>
+</section>
+
+<section id="gamePanel" class="hidden">
+<div class="panel">
+<strong>🌑 Ночная смена</strong> · <span id="roomLabel"></span>
+<div id="game" tabindex="0">
+<div class="wall"></div><div class="door"></div>
+</div>
+<div class="row">
+<button data-m="up">▲</button><button data-m="left">◀</button>
+<button data-m="down">▼</button><button data-m="right">▶</button>
+</div>
+<div id="gameMsg">Найди выход. Не шуми.</div>
+</div>
+</section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host);
+let myId=null, code=null, started=false, players={};
+
+function send(x){if(ws.readyState===1)ws.send(JSON.stringify(x))}
+function renderPlayers(list){
+  players={}; list.forEach(p=>players[p.id]=p);
+  $("#players").textContent="";
+  list.forEach(p=>{const s=document.createElement("span");s.textContent=`👤 ${p.name}`;$("#players").append(s)});
+  draw();
+}
+function draw(){
+  const g=$("#game");g.querySelectorAll(".p").forEach(e=>e.remove());
+  Object.values(players).forEach(p=>{
+    const d=document.createElement("div");d.className="p"+(p.id===myId?" me":"");
+    d.style.left=p.x+"%";d.style.top=p.y+"%";d.title=p.name;
+    const n=document.createElement("div");n.className="name";n.textContent=p.name;d.append(n);g.append(d);
+  });
+}
+ws.onopen=()=>$("#msg").textContent="Сервер подключён.";
+ws.onclose=()=>$("#msg").textContent="Соединение с сервером потеряно.";
+ws.onmessage=e=>{
+  const m=JSON.parse(e.data);
+  if(m.type==="error") return $("#msg").textContent="⚠️ "+m.message;
+  if(m.type==="joined"){myId=m.id;code=m.code;$("#roomInfo").textContent="Код комнаты: "+code;renderPlayers(m.players);$("#start").disabled=!m.host}
+  if(m.type==="state") renderPlayers(m.players);
+  if(m.type==="started"){started=true;$("#lobby").classList.add("hidden");$("#gamePanel").classList.remove("hidden");$("#roomLabel").textContent="Комната "+code;renderPlayers(m.players);$("#game").focus()}
+};
+$("#create").onclick=()=>send({type:"create",name:$("#name").value.trim()||"Игрок"});
+$("#join").onclick=()=>send({type:"join",code:$("#code").value.trim(),name:$("#name").value.trim()||"Игрок"});
+$("#start").onclick=()=>send({type:"start"});
+
+function move(dx,dy){
+ if(!started)return;
+ const p=players[myId];if(!p)return;
+ p.x=Math.max(5,Math.min(95,p.x+dx));p.y=Math.max(8,Math.min(92,p.y+dy));
+ draw();send({type:"move",x:p.x,y:p.y});
+}
+document.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{
+ const d=b.dataset.m;move(d==="left"?-4:d==="right"?4:0,d==="up"?-4:d==="down"?4:0)
+});
+$("#game").onkeydown=e=>{
+ if(["INPUT","TEXTAREA","BUTTON"].includes(e.target.tagName))return;
+ const k=e.key.toLowerCase();
+ if(k==="w"||k==="arrowup")move(0,-4);
+ if(k==="s"||k==="arrowdown")move(0,4);
+ if(k==="a"||k==="arrowleft")move(-4,0);
+ if(k==="d"||k==="arrowright")move(4,0);
+};
+</script>
+</body>
+</html>
